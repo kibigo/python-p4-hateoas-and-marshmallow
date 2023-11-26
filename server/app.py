@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import Flask, request, make_response
+from flask import Flask, request, make_response, jsonify
 from flask_marshmallow import Marshmallow
 from flask_migrate import Migrate
 from flask_restful import Api, Resource
@@ -15,6 +15,32 @@ app.json.compact = False
 migrate = Migrate(app, db)
 db.init_app(app)
 
+ma = Marshmallow(app)
+
+
+
+class NewsletterSchema(ma.SQLAlchemySchema):
+
+    class Meta:
+        model = Newsletter
+
+    title = ma.auto_field()
+    published_at = ma.auto_field()
+
+    url = ma.Hyperlinks(
+        {
+            "self": ma.URLFor(
+                "newsletterbyid",
+                values = dict(id="<id>")),
+            
+            "collection": ma.URLFor("newsletters"),
+        }
+    )
+
+newsletter_schema = NewsletterSchema()
+
+newsletters_schema = NewsletterSchema(many = True)
+
 api = Api(app)
 
 class Index(Resource):
@@ -26,7 +52,7 @@ class Index(Resource):
         }
         
         response = make_response(
-            response_dict,
+            jsonify(response_dict),
             200,
         )
 
@@ -38,33 +64,32 @@ class Newsletters(Resource):
 
     def get(self):
         
-        response_dict_list = [n.to_dict() for n in Newsletter.query.all()]
+        newsletters = Newsletter.query.all()
 
         response = make_response(
-            response_dict_list,
-            200,
+            newsletters_schema.dump(newsletters),
+            200
         )
 
         return response
 
     def post(self):
         
-        new_record = Newsletter(
-            title=request.form['title'],
-            body=request.form['body'],
+        new_newsletter = Newsletter(
+            title = request.form['title'],
+            body = request.form['body']
         )
 
-        db.session.add(new_record)
+        db.session.add(new_newsletter)
         db.session.commit()
 
-        response_dict = new_record.to_dict()
-
         response = make_response(
-            response_dict,
-            201,
+            newsletter_schema.dump(new_newsletter),
+            201
         )
 
         return response
+    
 
 api.add_resource(Newsletters, '/newsletters')
 
@@ -72,10 +97,10 @@ class NewsletterByID(Resource):
 
     def get(self, id):
 
-        response_dict = Newsletter.query.filter_by(id=id).first().to_dict()
+        newsletter = Newsletter.query.filter_by(id=id).first().to_dict()
 
         response = make_response(
-            response_dict,
+            newsletter_schema.dump(newsletter),
             200,
         )
 
@@ -83,17 +108,17 @@ class NewsletterByID(Resource):
 
     def patch(self, id):
 
-        record = Newsletter.query.filter_by(id=id).first()
-        for attr in request.form:
-            setattr(record, attr, request.form[attr])
+        newsletter = Newsletter.query.filter_by(id=id).first()
 
-        db.session.add(record)
+        for attr in request.form:
+            setattr(newsletter, attr, request.form[attr])
+
+        db.session.add(newsletter)
         db.session.commit()
 
-        response_dict = record.to_dict()
 
         response = make_response(
-            response_dict,
+            newsletter_schema.dump(newsletter),
             200
         )
 
@@ -109,7 +134,7 @@ class NewsletterByID(Resource):
         response_dict = {"message": "record successfully deleted"}
 
         response = make_response(
-            response_dict,
+            jsonify (response_dict),
             200
         )
 
